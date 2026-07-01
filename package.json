@@ -1,0 +1,37 @@
+{
+  "name": "disasterwatch-fullstack",
+  "version": "1.0.0",
+  "description": "DisasterWatch v4 — Full-stack disaster monitoring platform",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel backend:dev frontend:dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "backend:dev": "cd backend && npm run dev",
+    "frontend:dev": "cd frontend && npm run dev",
+    "backend:build": "cd backend && npm run build",
+    "frontend:build": "cd frontend && npm run build",
+    "build": "npm-run-all --parallel backend:build frontend:build",
+    "frontend:start": "cd frontend && npm run start",
+    "start": "npm-run-all --parallel backend:dev frontend:start",
+    "test": "echo \"No tests configured for this project.\"",
+    "backend:test": "echo \"No backend tests configured.\"",
+    "frontend:test": "echo \"No frontend tests configured.\"",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:push": "cd backend && npm run db:push",
+    "db:generate": "cd backend && npm run db:generate",
+    "db:seed": "cd backend && npm run db:seed",
+    "db:studio": "cd backend && npm run db:studio"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

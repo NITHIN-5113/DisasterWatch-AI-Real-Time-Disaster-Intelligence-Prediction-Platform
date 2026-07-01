@@ -1,0 +1,20 @@
+// src/config/prisma.js
+// Singleton Prisma client — avoids exhausting DB connections in dev
+
+const { PrismaClient } = require('@prisma/client');
+
+const globalForPrisma = globalThis;
+
+const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development'
+      ? ['query', 'error', 'warn']
+      : ['error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+
+module.exports = prisma;

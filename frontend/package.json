@@ -1,0 +1,17 @@
+{
+  "name": "disasterwatch-frontend",
+  "version": "1.0.0",
+  "description": "DisasterWatch v4 — Frontend SPA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo 'No build step required for vanilla JS'"
+  },
+  "dependencies": {
+    "express": "^4.18.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

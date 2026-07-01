@@ -1,0 +1,147 @@
+// prisma/schema.prisma
+// DisasterWatch — Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ─────────────────────────────────────────────
+// USER & AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  role          String    @default("USER")
+  avatarUrl     String?
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  refreshTokens RefreshToken[]
+  savedEvents   SavedEvent[]
+  alerts        AlertPreference[]
+  exportLogs    ExportLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────
+// HAZARD EVENTS (cached from external APIs)
+// ─────────────────────────────────────────────
+
+model HazardEvent {
+  id          String      @id @default(cuid())
+  externalId  String      @unique   // e.g. USGS event ID
+  type        String
+  magnitude   Float?
+  depth       Float?
+  latitude    Float
+  longitude   Float
+  place       String?
+  title       String?
+  url         String?
+  riskScore   Float?
+  riskLevel   String?
+  rawData     String                // Full API response stored as JSON string
+  occurredAt  DateTime
+  fetchedAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  mlScores    MLScore[]
+  savedBy     SavedEvent[]
+
+  @@index([type])
+  @@index([occurredAt])
+  @@index([magnitude])
+  @@map("hazard_events")
+}
+
+// ─────────────────────────────────────────────
+// ML SCORES
+// ─────────────────────────────────────────────
+
+model MLScore {
+  id               String      @id @default(cuid())
+  eventId          String
+  event            HazardEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  magPrediction    Float?
+  aftershockProb   Float?
+  clusterIndex     Int?
+  riskScore        Float?
+  riskLevel        String?
+  anomalyZScore    Float?
+  isAnomaly        Boolean     @default(false)
+  computedAt       DateTime    @default(now())
+
+  @@unique([eventId])
+  @@map("ml_scores")
+}
+
+// ─────────────────────────────────────────────
+// USER SAVED EVENTS & ALERTS
+// ─────────────────────────────────────────────
+
+model SavedEvent {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     HazardEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  notes     String?
+  savedAt   DateTime    @default(now())
+
+  @@unique([userId, eventId])
+  @@map("saved_events")
+}
+
+model AlertPreference {
+  id             String     @id @default(cuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hazardType     String
+  minMagnitude   Float      @default(4.0)
+  emailEnabled   Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+
+  @@unique([userId, hazardType])
+  @@map("alert_preferences")
+}
+
+// ─────────────────────────────────────────────
+// AUDIT / EXPORT LOG
+// ─────────────────────────────────────────────
+
+model ExportLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename   String
+  rowCount   Int
+  filters    String?
+  createdAt  DateTime @default(now())
+
+  @@map("export_logs")
+}
