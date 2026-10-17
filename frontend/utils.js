@@ -141,7 +141,14 @@ const DW = (() => {
       const token = storage.get('dw_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(this.BASE + path, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let errJson = null;
+        try { errJson = await res.json(); } catch (_) {}
+        const err = new Error(errJson?.message || `HTTP ${res.status}`);
+        err.status = res.status;
+        err.data = errJson;
+        throw err;
+      }
       return res.json();
     },
 
@@ -156,7 +163,14 @@ const DW = (() => {
         headers,
         body: JSON.stringify(data)
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let errJson = null;
+        try { errJson = await res.json(); } catch (_) {}
+        const err = new Error(errJson?.message || `HTTP ${res.status}`);
+        err.status = res.status;
+        err.data = errJson;
+        throw err;
+      }
       return res.json();
     }
   };

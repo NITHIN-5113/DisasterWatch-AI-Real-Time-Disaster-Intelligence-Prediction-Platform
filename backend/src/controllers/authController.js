@@ -21,15 +21,15 @@ const SALT_ROUNDS = 12;
 
 async function register(req, res, next) {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, phone } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return next(ApiError.conflict('Email already in use'));
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await prisma.user.create({
-      data: { email, passwordHash, name: name || null },
-      select: { id: true, email: true, name: true, role: true, createdAt: true },
+      data: { email, passwordHash, name: name || null, phone: phone || null },
+      select: { id: true, email: true, name: true, phone: true, role: true, createdAt: true },
     });
 
     logger.info(`New user registered: ${email}`);

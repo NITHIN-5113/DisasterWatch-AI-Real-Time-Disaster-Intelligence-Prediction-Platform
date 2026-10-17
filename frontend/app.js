@@ -5,18 +5,25 @@
 // ─── Auth Guard ─────────────────────────────────────────────────────────────
 (function authGuard() {
   const user = DW.storage.getUser();
-  if (!user) { window.location.href = 'login.html'; return; }
+  const token = DW.storage.get('dw_token');
+  if (!user || !token) {
+    DW.storage.clearUser();
+    DW.storage.remove('dw_token');
+    window.location.replace('login.html');
+    return;
+  }
   const info = document.getElementById('userInfo');
   if (info) {
-    info.querySelector('.user-name').textContent = user.name || user.id;
-    info.querySelector('.user-avatar').textContent = (user.name || user.id)[0].toUpperCase();
+    info.querySelector('.user-name').textContent = user.name || user.email || user.id;
+    info.querySelector('.user-avatar').textContent = (user.name || user.email || user.id)[0].toUpperCase();
   }
 })();
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
 document.getElementById('logoutBtn')?.addEventListener('click', () => {
   DW.storage.clearUser();
-  window.location.href = 'login.html';
+  DW.storage.remove('dw_token');
+  window.location.replace('login.html');
 });
 
 // ─── Live Clock ──────────────────────────────────────────────────────────────
@@ -27,9 +34,16 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// ─── Sidebar Toggle ──────────────────────────────────────────────────────────
+// ─── Sidebar Toggle & Map Resize ─────────────────────────────────────────────
 document.getElementById('sidebarToggle')?.addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('collapsed');
+  setTimeout(() => {
+    if (window.DisasterMap) DisasterMap.invalidateSize();
+  }, 250);
+});
+
+window.addEventListener('resize', () => {
+  if (window.DisasterMap) DisasterMap.invalidateSize();
 });
 
 // ─── View Routing ────────────────────────────────────────────────────────────
@@ -70,23 +84,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
   });
 });
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-const DISASTERS = [
-  { id: 1, type: 'earthquake', severity: 'critical', location: 'Tokyo, Japan', lat: 35.6, lon: 720, time: '2h ago', status: 'active', magnitude: 6.8, affected: 12000 },
-  { id: 2, type: 'flood', severity: 'high', location: 'Chennai, India', lat: 13.0, lon: 555, time: '4h ago', status: 'active', magnitude: null, affected: 45000 },
-  { id: 3, type: 'storm', severity: 'critical', location: 'Gulf of Mexico', lat: 25.0, lon: 170, time: '1h ago', status: 'active', magnitude: null, affected: 80000 },
-  { id: 4, type: 'fire', severity: 'high', location: 'California, USA', lat: 36.7, lon: 130, time: '6h ago', status: 'monitoring', magnitude: null, affected: 3200 },
-  { id: 5, type: 'earthquake', severity: 'medium', location: 'Istanbul, Turkey', lat: 41.0, lon: 450, time: '8h ago', status: 'resolved', magnitude: 4.2, affected: 500 },
-  { id: 6, type: 'flood', severity: 'medium', location: 'Bangladesh', lat: 23.6, lon: 565, time: '12h ago', status: 'active', magnitude: null, affected: 25000 },
-  { id: 7, type: 'landslide', severity: 'high', location: 'Nepal', lat: 28.1, lon: 565, time: '3h ago', status: 'active', magnitude: null, affected: 1200 },
-  { id: 8, type: 'tsunami', severity: 'critical', location: 'Philippines', lat: 12.8, lon: 680, time: '30m ago', status: 'active', magnitude: null, affected: 30000 },
-  { id: 9, type: 'storm', severity: 'low', location: 'Caribbean', lat: 17.0, lon: 155, time: '14h ago', status: 'monitoring', magnitude: null, affected: 2000 },
-  { id: 10, type: 'fire', severity: 'medium', location: 'Australia', lat: 360, lon: 720, time: '5h ago', status: 'monitoring', magnitude: null, affected: 800 },
-  { id: 11, type: 'earthquake', severity: 'low', location: 'Mexico City', lat: 19.4, lon: 115, time: '18h ago', status: 'resolved', magnitude: 3.1, affected: 0 },
-  { id: 12, type: 'flood', severity: 'critical', location: 'Pakistan', lat: 30.3, lon: 565, time: '7h ago', status: 'active', magnitude: null, affected: 120000 },
-];
-
-const TYPE_EMOJI = { earthquake: '🌍', flood: '🌊', storm: '🌪️', fire: '🔥', landslide: '⛰️', tsunami: '🌊', other: '⚠️' };
+const TYPE_EMOJI = { earthquake: '🌍', flood: '🌊', storm: '🌪️', fire: '🔥', landslide: '⛰️', tsunami: '🌊', volcano: '🌋', other: '⚠️' };
 const SEV_COLORS = { critical: '#FF3B3B', high: '#FF8C00', medium: '#FFD600', low: '#4CAF50' };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -100,41 +98,68 @@ async function renderRecentEvents() {
   const list = document.getElementById('recentEventsList');
   if (!list) return;
 
+  // Try live hazard API first (DB events synced from USGS)
   try {
     const response = await DW.api.get('/hazards?perPage=6&sortBy=occurredAt&order=desc');
     const recent = response.data || [];
 
-    list.innerHTML = recent.map(d => {
-      const severity = d.riskLevel || 'medium'; // Map riskLevel to severity
-      const location = d.place || `${d.latitude.toFixed(1)}, ${d.longitude.toFixed(1)}`;
-      const time = DW.timeAgo(d.occurredAt);
-      const affected = d.riskScore ? Math.round(d.riskScore * 1000) : 0; // Mock affected count
+    if (recent.length === 0) {
+      // Fallback: try live events feed
+      throw new Error('No DB events, falling back to live feed');
+    }
 
+    list.innerHTML = recent.map(d => {
+      const severity = d.riskLevel || 'medium';
+      const location = d.place || `${(d.latitude || 0).toFixed(1)}, ${(d.longitude || 0).toFixed(1)}`;
+      const time = DW.timeAgo(d.occurredAt);
       return `
         <div class="event-item sev-${severity}">
-          <div class="ei-icon">${TYPE_EMOJI[d.type] || '⚠️'}</div>
+          <div class="ei-icon">${TYPE_EMOJI[d.type?.toLowerCase()] || '⚠️'}</div>
           <div class="ei-body">
             <div class="ei-title">${DW.capitalize(d.type)} — ${location}</div>
-            <div class="ei-meta mono">${time} · ${affected.toLocaleString()} affected</div>
+            <div class="ei-meta mono">${time} · Official Source: USGS / NASA EONET</div>
           </div>
           <div class="ei-sev sev-badge-${severity}">${severity.toUpperCase()}</div>
         </div>
       `;
     }).join('');
-  } catch (error) {
-    console.error('Failed to load recent events:', error);
-    // Fallback to mock data
-    const recent = DISASTERS.slice(0, 6);
-    list.innerHTML = recent.map(d => `
-      <div class="event-item sev-${d.severity}">
-        <div class="ei-icon">${TYPE_EMOJI[d.type]}</div>
-        <div class="ei-body">
-          <div class="ei-title">${DW.capitalize(d.type)} — ${d.location}</div>
-          <div class="ei-meta mono">${d.time} · ${d.affected.toLocaleString()} affected</div>
-        </div>
-        <div class="ei-sev sev-badge-${d.severity}">${d.severity.toUpperCase()}</div>
-      </div>
-    `).join('');
+  } catch {
+    // Fallback: use live feed events from DisasterMap if available
+    try {
+      let res;
+      try {
+        res = await fetch('/api/v1/hazards/live?timeframe=24h&type=all');
+        if (!res.ok) throw new Error('Proxy error');
+      } catch (proxyErr) {
+        res = await fetch('http://localhost:4000/api/v1/hazards/live?timeframe=24h&type=all');
+      }
+      if (!res.ok) throw new Error('Live feed unavailable');
+      const json = await res.json();
+      const events = (json.data?.events || []).slice(0, 6);
+
+      if (events.length === 0) {
+        list.innerHTML = '<div class="no-data">No confirmed disasters in the last 24 hours.</div>';
+        return;
+      }
+
+      list.innerHTML = events.map(d => {
+        const sev = d.severity || 'medium';
+        const timeStr = d.time ? DW.timeAgo(d.time) : 'Recent';
+        return `
+          <div class="event-item sev-${sev}">
+            <div class="ei-icon">${TYPE_EMOJI[d.type] || '⚠️'}</div>
+            <div class="ei-body">
+              <div class="ei-title">${d.title || DW.capitalize(d.type)}</div>
+              <div class="ei-meta mono">${timeStr} · ${d.source || 'Official Feed'}</div>
+            </div>
+            <div class="ei-sev sev-badge-${sev}">${sev.toUpperCase()}</div>
+          </div>
+        `;
+      }).join('');
+    } catch (fallbackErr) {
+      console.error('Failed to load recent events from any source:', fallbackErr);
+      list.innerHTML = '<div class="no-data">Live feed temporarily unavailable. No confirmed events to display.</div>';
+    }
   }
 }
 
@@ -182,93 +207,128 @@ function renderActivityChart() {
 let activeFilter = 'all';
 
 function renderMap() {
-  const container = document.getElementById('mapMarkers');
-  if (!container) return;
+  if (!window.DisasterMap) {
+    console.warn('[app.js] DisasterMap component not loaded yet.');
+    return;
+  }
 
-  const filtered = activeFilter === 'all' ? DISASTERS : DISASTERS.filter(d => d.type === activeFilter);
+  // Initialize the real Leaflet map instance
+  DisasterMap.init('realMap');
 
-  // Map coordinate transform (simplified equirectangular projection for our SVG)
-  // SVG viewBox 0 0 900 500
-  // Lat range: -60 to 80 → y 450 to 50
-  // Lon range: -180 to 180 → x 0 to 900
-  container.innerHTML = filtered.map(d => {
-    const x = (d.lon / 900 * 900); // lon stored as 0-900 range in mock
-    const y = d.lat * 4; // simplified
-    const color = SEV_COLORS[d.severity];
-    return `
-      <div class="map-marker sev-${d.severity}"
-           style="left:${d.lon * 0.98}px; top:${d.lat * 3.6}px; border-color:${color}"
-           data-id="${d.id}" title="${TYPE_EMOJI[d.type]} ${d.location}">
-        <span>${TYPE_EMOJI[d.type]}</span>
-        <div class="marker-pulse" style="border-color:${color}"></div>
-      </div>
-    `;
-  }).join('');
+  // Fetch and render real, confirmed live disaster data from official sources
+  // (USGS Earthquakes + NASA EONET — no mock data)
+  DisasterMap.fetchLiveDisasterData('24h');
 
-  container.querySelectorAll('.map-marker').forEach(m => {
-    m.addEventListener('click', () => {
-      const id = parseInt(m.dataset.id);
-      const d = DISASTERS.find(x => x.id === id);
-      if (d) showMapDetail(d);
-    });
-  });
+  // Invalidate size immediately and after layout rendering
+  DisasterMap.invalidateSize();
+  setTimeout(() => DisasterMap.invalidateSize(), 150);
+  setTimeout(() => DisasterMap.invalidateSize(), 400);
 }
+
+// Expose showMapDetail globally for Leaflet popup click callbacks
+window.showEventDetail = showMapDetail;
 
 function showMapDetail(d) {
   const panel = document.getElementById('mapDetailPanel');
   if (!panel) return;
+  const cfg = {
+    earthquake: '🌍',
+    flood: '🌊',
+    storm: '🌪️',
+    fire: '🔥',
+    landslide: '⛰️',
+    tsunami: '🌊',
+    other: '⚠️'
+  };
+  const icon = cfg[d.type] || '⚠️';
+
   panel.innerHTML = `
     <div class="mdp-content">
       <div class="mdp-header">
-        <span class="mdp-icon">${TYPE_EMOJI[d.type]}</span>
+        <span class="mdp-icon">${icon}</span>
         <div>
-          <div class="mdp-title">${DW.capitalize(d.type)}</div>
-          <div class="mdp-location">${d.location}</div>
+          <div class="mdp-title">${d.title || DW.capitalize(d.type)}</div>
+          <div class="mdp-location">${d.location} &bull; Coordinates: ${d.lat.toFixed(3)}°N, ${d.lng.toFixed(3)}°E</div>
         </div>
-        <div class="sev-badge-${d.severity} mdp-sev">${d.severity.toUpperCase()}</div>
+        <div class="sev-badge-${d.severity} mdp-sev">${(d.severity || 'ACTIVE').toUpperCase()}</div>
       </div>
       <div class="mdp-stats">
-        <div class="mdp-stat"><div class="mono">${d.time}</div><div>Reported</div></div>
-        <div class="mdp-stat"><div class="mono">${d.affected.toLocaleString()}</div><div>Affected</div></div>
-        <div class="mdp-stat"><div class="mono">${d.status.toUpperCase()}</div><div>Status</div></div>
+        <div class="mdp-stat"><div class="mono">${d.time || 'Recent'}</div><div>Reported</div></div>
+        <div class="mdp-stat"><div class="mono">${d.affected ? d.affected.toLocaleString() : 'N/A'}</div><div>Affected</div></div>
+        <div class="mdp-stat"><div class="mono">${(d.status || 'Active').toUpperCase()}</div><div>Status</div></div>
         ${d.magnitude ? `<div class="mdp-stat"><div class="mono">M${d.magnitude}</div><div>Magnitude</div></div>` : ''}
       </div>
-      <button class="btn-mini" onclick="DW.showToast('Alert acknowledged', 'success')">Acknowledge</button>
+      <div style="display:flex; gap:10px; margin-top:8px;">
+        <button class="btn-mini" onclick="DW.showToast('Response alert acknowledged for ${d.location}', 'success')">Acknowledge</button>
+        <button class="btn-mini btn-outline" onclick="DW.showToast('Dispatching regional NDRF/SDRF team to ${d.location}...', 'info')">Dispatch Rescue</button>
+      </div>
     </div>
   `;
 }
 
-document.querySelectorAll('.map-ctrl').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.map-ctrl').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeFilter = btn.dataset.filter;
-    renderMap();
-  });
-});
-
 // ─── Alerts Table ─────────────────────────────────────────────────────────────
-function renderAlerts(filter) {
+let cachedAlertEvents = [];
+
+async function renderAlerts(filter) {
   const tbody = document.getElementById('alertsTableBody');
   const label = document.getElementById('alertsCountLabel');
   if (!tbody) return;
 
-  const filtered = filter === 'all' ? DISASTERS : DISASTERS.filter(d => d.severity === filter);
-  if (label) label.textContent = `Showing ${filtered.length} alerts`;
+  // Use events already loaded into DisasterMap or fetch fresh
+  let events = window.DisasterMap ? DisasterMap.getVerifiedEvents() : [];
+  if (events.length === 0) {
+    try {
+      let res;
+      try {
+        res = await fetch('/api/v1/hazards/live?timeframe=24h&type=all');
+        if (!res.ok) throw new Error('Proxy error');
+      } catch (proxyErr) {
+        res = await fetch('http://localhost:4000/api/v1/hazards/live?timeframe=24h&type=all');
+      }
+      if (res.ok) {
+        const json = await res.json();
+        events = json.data?.events || [];
+        cachedAlertEvents = events;
+      }
+    } catch (e) {
+      console.warn('Could not fetch live events for alerts table:', e);
+    }
+  } else {
+    cachedAlertEvents = events;
+  }
 
-  tbody.innerHTML = filtered.map(d => `
-    <tr class="alert-row sev-row-${d.severity}">
-      <td><span class="sev-badge-${d.severity}">${d.severity.toUpperCase()}</span></td>
-      <td>${TYPE_EMOJI[d.type]} ${DW.capitalize(d.type)}</td>
-      <td>${d.location}</td>
-      <td class="mono">${d.time}</td>
-      <td><span class="status-pill status-${d.status}">${d.status}</span></td>
-      <td>
-        <button class="btn-mini" onclick="DW.showToast('Acknowledged: ${d.location}', 'success')">ACK</button>
-        <button class="btn-mini btn-outline" onclick="DW.showToast('Dispatching response team to ${d.location}...', 'info')">DISPATCH</button>
-      </td>
-    </tr>
-  `).join('');
+  const filtered = filter === 'all' ? events
+    : events.filter(d => {
+        const s = d.severity || 'medium';
+        return s === filter;
+      });
+
+  if (label) label.textContent = `Showing ${filtered.length} confirmed alerts`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">No confirmed disasters reported for this filter right now.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(d => {
+    const sev = d.severity || 'medium';
+    const timeStr = d.time ? new Date(d.time).toLocaleString() : 'Recent';
+    const loc = d.location || d.title || 'See source';
+    const locSafe = loc.replace(/'/g, '');
+    return `
+      <tr class="alert-row sev-row-${sev}">
+        <td><span class="sev-badge-${sev}">${sev.toUpperCase()}</span></td>
+        <td>${TYPE_EMOJI[d.type] || '⚠️'} ${DW.capitalize(d.type)}</td>
+        <td>${loc}</td>
+        <td class="mono">${timeStr}</td>
+        <td><span class="status-pill status-active">${d.status || 'Active'}</span></td>
+        <td>
+          ${d.sourceUrl ? `<a href="${d.sourceUrl}" target="_blank" class="btn-mini" rel="noopener">Source ↗</a>` : ''}
+          <button class="btn-mini btn-outline" onclick="DW.showToast('Acknowledged: ${locSafe}', 'success')">ACK</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 document.querySelectorAll('#alertFilters .chip').forEach(chip => {
@@ -437,25 +497,34 @@ function renderTrendChart() {
 
 // ─── Global Search ────────────────────────────────────────────────────────────
 document.getElementById('globalSearch')?.addEventListener('input', (e) => {
-  const q = e.target.value.toLowerCase();
+  const q = e.target.value.toLowerCase().trim();
   if (!q) return;
-  const match = DISASTERS.find(d => d.location.toLowerCase().includes(q) || d.type.includes(q));
+  // Search live events cached from the map or alerts
+  const events = (window.DisasterMap ? DisasterMap.getVerifiedEvents() : []).concat(cachedAlertEvents || []);
+  const match = events.find(d =>
+    (d.location || '').toLowerCase().includes(q) ||
+    (d.title || '').toLowerCase().includes(q) ||
+    (d.type || '').toLowerCase().includes(q)
+  );
   if (match) {
     switchView('alerts');
     setTimeout(() => {
       const rows = document.querySelectorAll('.alert-row');
       rows.forEach(r => r.classList.remove('highlight'));
-      const row = document.querySelector(`.alert-row:nth-child(${DISASTERS.indexOf(match) + 1})`);
-      if (row) { row.classList.add('highlight'); row.scrollIntoView({ behavior: 'smooth' }); }
-    }, 100);
+      for (const row of rows) {
+        if (row.textContent.toLowerCase().includes(q)) {
+          row.classList.add('highlight');
+          row.scrollIntoView({ behavior: 'smooth' });
+          break;
+        }
+      }
+    }, 300);
+  } else if (window.DisasterMap) {
+    switchView('map');
+    setTimeout(() => DisasterMap.searchPlace(q), 150);
   }
 });
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 renderDashboard();
-DW.showToast('⚡ System online — 247 active global alerts', 'info');
-
-// Periodic mock alert
-setTimeout(() => {
-  DW.showToast('🌊 NEW: Flood warning issued — Bangladesh (Critical)', 'error');
-}, 8000);
+DW.showToast('⚡ DisasterWatch online — connecting to live global feeds…', 'info');

@@ -4,12 +4,22 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DisasterWatch — Command Center</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css"/>
   <link rel="stylesheet" href="style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 </head>
 <body class="app-page">
   <script>
     window.API_BASE_URL = window.API_BASE_URL || 'http://localhost:4000/api/v1';
+    (function enforceAuth() {
+      try {
+        const u = localStorage.getItem('dw_user');
+        const t = localStorage.getItem('dw_token');
+        if (!u || !t) {
+          window.location.replace('login.html');
+        }
+      } catch (_) {}
+    })();
   </script>
 
   <!-- Sidebar -->
@@ -161,47 +171,214 @@
       <!-- MAP VIEW -->
       <section class="view" id="view-map">
         <div class="map-container">
+          <!-- Top Map Navigation / Controls Bar -->
           <div class="map-controls">
-            <button class="map-ctrl active" data-filter="all">All</button>
-            <button class="map-ctrl" data-filter="earthquake">Quakes</button>
-            <button class="map-ctrl" data-filter="flood">Floods</button>
-            <button class="map-ctrl" data-filter="storm">Storms</button>
-            <button class="map-ctrl" data-filter="fire">Fires</button>
-          </div>
-          <div class="map-display" id="mapDisplay">
-            <div class="map-svg-wrap">
-              <svg id="worldMap" viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
-                <!-- Simplified world landmass outline -->
-                <rect width="900" height="500" fill="var(--map-ocean)"/>
-                <!-- Continents simplified -->
-                <!-- North America -->
-                <path d="M80 80 L200 60 L240 100 L260 180 L220 280 L160 320 L100 300 L60 200 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- South America -->
-                <path d="M180 310 L240 290 L270 380 L250 460 L200 480 L160 440 L150 360 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- Europe -->
-                <path d="M400 70 L480 60 L500 120 L460 160 L400 150 L380 110 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- Africa -->
-                <path d="M400 160 L480 150 L510 260 L490 380 L430 420 L380 380 L360 270 L380 180 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- Asia -->
-                <path d="M480 60 L700 50 L750 120 L720 200 L650 220 L560 200 L500 160 L480 120 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- Australia -->
-                <path d="M680 300 L780 280 L800 360 L760 400 L680 390 L650 340 Z" fill="var(--map-land)" opacity="0.7"/>
-                <!-- Grid lines -->
-                <line x1="0" y1="250" x2="900" y2="250" stroke="var(--map-grid)" stroke-width="0.5" stroke-dasharray="4 4"/>
-                <line x1="450" y1="0" x2="450" y2="500" stroke="var(--map-grid)" stroke-width="0.5" stroke-dasharray="4 4"/>
-              </svg>
-              <div class="map-markers" id="mapMarkers"></div>
+            <!-- Left: Disaster filters + Timeframe -->
+            <div class="map-ctrls-left">
+              <span class="ctrl-group-label mono">FILTER:</span>
+              <button class="map-ctrl active" data-filter="all">All Events</button>
+              <button class="map-ctrl" data-filter="earthquake">Quakes</button>
+              <button class="map-ctrl" data-filter="flood">Floods</button>
+              <button class="map-ctrl" data-filter="storm">Storms</button>
+              <button class="map-ctrl" data-filter="fire">Fires</button>
+              <div class="map-tf-divider"></div>
+              <span class="ctrl-group-label mono">TIMEFRAME:</span>
+              <button class="map-tf-btn active" data-tf="24h">24H</button>
+              <button class="map-tf-btn" data-tf="7d">7D</button>
+              <button class="map-tf-btn" data-tf="30d">30D</button>
+            </div>
+
+            <!-- Center: Search box -->
+            <div class="map-search-bar">
+              <div class="map-search-input-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="text"
+                  id="mapSearchInput"
+                  class="map-search-input"
+                  placeholder="Search city, district, place (e.g. Tiruppur, Chennai, Salem)..."
+                />
+              </div>
+              <button type="button" class="btn-map-action" id="mapSearchBtn" title="Search place">
+                Find
+              </button>
+            </div>
+
+            <!-- Right: Layer switcher & Action tools -->
+            <div class="map-ctrls-right">
+              <!-- Base Layer Switcher -->
+              <div class="map-layer-switcher">
+                <button type="button" class="map-layer-btn active" data-layer="street" title="Default Street View">
+                  🗺️ Default
+                </button>
+                <button type="button" class="map-layer-btn" data-layer="satellite" title="Esri Satellite Imagery">
+                  🛰️ Satellite
+                </button>
+                <button type="button" class="map-layer-btn" data-layer="hybrid" title="Satellite with Place & Road Labels">
+                  🏷️ Hybrid
+                </button>
+                <button type="button" class="map-layer-btn" data-layer="terrain" title="Topographic Terrain">
+                  ⛰️ Terrain
+                </button>
+              </div>
+
+              <!-- Observed Rainfall Radar Toggle -->
+              <button type="button" class="btn-map-action" id="btnToggleRainfall" title="Toggle Observed Rainfall Radar (RainViewer)">
+                🌧️ <span>Rainfall</span>
+              </button>
+
+              <!-- Global Summary -->
+              <button type="button" class="btn-map-action" id="btnToggleSummary" title="Global Disaster Summary">
+                🌍 <span>Summary</span>
+              </button>
+
+              <!-- My Location GPS -->
+              <button type="button" class="btn-map-action" id="btnMyLocation" title="Center to My GPS Location">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <line x1="12" y1="2" x2="12" y2="5"></line>
+                  <line x1="12" y1="19" x2="12" y2="22"></line>
+                  <line x1="2" y1="12" x2="5" y2="12"></line>
+                  <line x1="19" y1="12" x2="22" y2="12"></line>
+                </svg>
+                <span>My Location</span>
+              </button>
+
+              <!-- Reset to Default (Tamil Nadu) -->
+              <button type="button" class="btn-map-action" id="btnResetView" title="Re-center on Tamil Nadu">
+                <span>Default View</span>
+              </button>
+
+              <!-- Offline Download Option -->
+              <button type="button" class="btn-map-action btn-offline-dl" id="btnDownloadOffline" title="Save regional tiles for offline use">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Offline Cache</span>
+              </button>
+
+              <!-- Online/Offline Badge -->
+              <div class="map-net-status online" id="mapNetStatus">
+                <span class="status-dot-sm green"></span> ONLINE
+              </div>
             </div>
           </div>
+
+          <!-- Real Interactive Leaflet Map Mount Container -->
+          <div class="map-display" id="mapDisplay">
+            <div id="realMap"></div>
+
+            <!-- User Location Chip -->
+            <div class="user-location-chip hidden" id="userLocationChip"></div>
+
+            <!-- Map Status Bar (feed timestamp + stale warning) -->
+            <div class="map-status-bar">
+              <span class="map-last-updated mono" id="mapLastUpdated">Connecting to live feeds...</span>
+              <span class="map-stale-warning hidden" id="mapStaleWarning"></span>
+            </div>
+
+            <!-- Layer Checkbox Panel -->
+            <div class="map-layer-panel">
+              <div class="mlp-title mono">DISASTER LAYERS</div>
+              <label class="mlp-item">
+                <input type="checkbox" class="disaster-layer-chk" data-type="earthquake" checked/>
+                <span class="mlp-dot" style="background:#FF3B3B"></span> Earthquakes
+              </label>
+              <label class="mlp-item">
+                <input type="checkbox" class="disaster-layer-chk" data-type="flood" checked/>
+                <span class="mlp-dot" style="background:#00BCD4"></span> Floods
+              </label>
+              <label class="mlp-item">
+                <input type="checkbox" class="disaster-layer-chk" data-type="storm" checked/>
+                <span class="mlp-dot" style="background:#FF9800"></span> Storms
+              </label>
+              <label class="mlp-item">
+                <input type="checkbox" class="disaster-layer-chk" data-type="fire" checked/>
+                <span class="mlp-dot" style="background:#E91E63"></span> Wildfires
+              </label>
+              <label class="mlp-item">
+                <input type="checkbox" class="disaster-layer-chk" data-type="volcano" checked/>
+                <span class="mlp-dot" style="background:#9C27B0"></span> Volcanoes
+              </label>
+            </div>
+
+            <!-- Rainfall Legend Overlay -->
+            <div class="rainfall-legend hidden" id="rainfallLegend">
+              <div class="rl-title mono">OBSERVED RAINFALL</div>
+              <div class="rl-meta" id="rainfallMetaInfo">Observed past radar (no forecast)</div>
+              <div class="rl-gradient"></div>
+              <div class="rl-labels">
+                <span>0</span><span>1</span><span>5</span><span>15</span><span>30+</span>
+              </div>
+              <div class="rl-unit">mm/hr intensity</div>
+            </div>
+
+            <!-- Empty State Message -->
+            <div class="map-empty-state hidden" id="mapEmptyState"></div>
+
+            <!-- Offline Cache Progress Overlay Modal -->
+            <div class="offline-modal hidden" id="offlineProgressModal">
+              <div class="offline-modal-card">
+                <div class="omc-header">
+                  <span class="omc-title mono">OFFLINE REGION CACHE</span>
+                  <button type="button" class="omc-close" id="closeOfflineModal">✕</button>
+                </div>
+                <p class="omc-desc">
+                  Caching high-resolution tiles for Tamil Nadu & surrounding districts into local browser storage.
+                </p>
+                <div class="omc-progress-track">
+                  <div class="omc-progress-fill" id="offlineProgressBar" style="width: 0%"></div>
+                </div>
+                <div class="omc-status mono" id="offlineProgressText">Initializing tile cache worker...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Map Legend -->
           <div class="map-legend">
-            <div class="legend-item"><span class="legend-dot eq"></span>Earthquake</div>
-            <div class="legend-item"><span class="legend-dot fl"></span>Flood</div>
-            <div class="legend-item"><span class="legend-dot st"></span>Storm</div>
-            <div class="legend-item"><span class="legend-dot fi"></span>Fire</div>
+            <div class="legend-item"><span class="legend-dot eq"></span>Earthquake (USGS)</div>
+            <div class="legend-item"><span class="legend-dot fl"></span>Flood Warning</div>
+            <div class="legend-item"><span class="legend-dot st"></span>Storm / Cyclone</div>
+            <div class="legend-item"><span class="legend-dot fi"></span>Wildfire</div>
+            <div class="legend-meta mono">Default Center: Tamil Nadu, India (11.12° N, 78.65° E) &bull; Leaflet OSM / Esri</div>
           </div>
         </div>
+
+        <!-- Event Details Sliding Panel -->
         <div class="map-detail-panel" id="mapDetailPanel">
-          <div class="mdp-placeholder">Click any event marker to see details</div>
+          <div class="mdp-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>Click any marker on the map to inspect live threat telemetries and risk assessments.</span>
+          </div>
+        </div>
+
+        <!-- Global Disaster Summary Drawer -->
+        <div class="global-summary-drawer hidden" id="globalSummaryDrawer">
+          <div class="gsd-header">
+            <div>
+              <div class="gsd-title mono">🌍 GLOBAL DISASTER SUMMARY</div>
+              <div class="gsd-subtitle">Confirmed active events — official sources only</div>
+            </div>
+            <button type="button" class="gsd-close" id="closeSummaryDrawer">✕</button>
+          </div>
+          <div class="gs-timeframe-bar">
+            <button class="gs-tf-btn active" data-tf="24h">Last 24H</button>
+            <button class="gs-tf-btn" data-tf="7d">Last 7 Days</button>
+            <button class="gs-tf-btn" data-tf="30d">Last 30 Days</button>
+          </div>
+          <div class="gsd-scroll" id="globalSummaryContent">
+            <div class="mono gsd-loading">Loading confirmed global disasters...</div>
+          </div>
         </div>
       </section>
 
@@ -345,6 +522,8 @@
   <!-- Alert Toast -->
   <div class="toast-container" id="toastContainer"></div>
 
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="map-component.js"></script>
   <script src="utils.js"></script>
   <script src="ml-model.js"></script>
   <script src="app.js"></script>

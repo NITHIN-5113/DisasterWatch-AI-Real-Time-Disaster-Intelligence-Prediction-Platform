@@ -220,10 +220,51 @@ async function getNearby(req, res, next) {
   }
 }
 
+// ── Live Authoritative Events (USGS, NASA EONET) ───────────
+const liveDisasterService = require('../services/liveDisasterService');
+
+async function getLiveEvents(req, res, next) {
+  try {
+    const timeframe = req.query.timeframe || '24h';
+    const type = req.query.type || 'all';
+    const result = await liveDisasterService.getLiveDisasterEvents(timeframe, type);
+    return success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Global Disaster Summary by Country & Continent ─────────
+async function getDisasterSummary(req, res, next) {
+  try {
+    const timeframe = req.query.timeframe || '24h';
+    const result = await liveDisasterService.getGlobalDisasterSummary(timeframe);
+    return success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Observed Rainfall Radar Layer (RainViewer) ──────────────
+async function getRainfallRadar(req, res, next) {
+  try {
+    const result = await liveDisasterService.fetchRainViewerRadar();
+    if (!result) {
+      return next(ApiError.internal('Unable to fetch live radar metadata'));
+    }
+    return success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listHazards,
   getHazard,
   syncEarthquakes,
   getStats,
   getNearby,
+  getLiveEvents,
+  getDisasterSummary,
+  getRainfallRadar,
 };
