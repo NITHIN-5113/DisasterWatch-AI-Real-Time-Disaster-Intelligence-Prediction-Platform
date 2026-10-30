@@ -8,7 +8,7 @@ const logger = require('./src/utils/logger');
 const PORT = process.env.PORT || 4000;
 
 const server = app.listen(PORT, () => {
-  logger.info(`🚀 DisasterWatch API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+  logger.info(`DisasterWatch API running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
 });
 
 // Graceful shutdown

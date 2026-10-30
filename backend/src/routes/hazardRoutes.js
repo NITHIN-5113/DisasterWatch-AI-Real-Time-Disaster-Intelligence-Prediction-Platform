@@ -8,15 +8,18 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { dataLimiter } = require('../middleware/rateLimiter');
 const { listHazards, idParam } = require('../validators/hazardValidator');
 
-// Public read endpoints (no auth required for public dashboards)
+// Public read endpoints
 // GET  /api/v1/hazards/live?timeframe=24h|7d|30d&type=all|earthquake|flood|storm|fire|volcano
 router.get('/live',           ctrl.getLiveEvents);
 
-// GET  /api/v1/hazards/summary?timeframe=24h|7d|30d
-router.get('/summary',        ctrl.getDisasterSummary);
+// GET  /api/v1/hazards/radar-frames (Time-series frames for playback animation)
+router.get('/radar-frames',   ctrl.getRadarFrames);
 
-// GET  /api/v1/hazards/rainfall-radar
-router.get('/rainfall-radar', ctrl.getRainfallRadar);
+// GET  /api/v1/hazards/rainfall-radar (alias to radar-frames for backward compatibility)
+router.get('/rainfall-radar', ctrl.getRadarFrames);
+
+// GET  /api/v1/hazards/weather-point?lat=&lng=
+router.get('/weather-point',  ctrl.getWeatherPoint);
 
 // GET  /api/v1/hazards
 router.get('/',        validate(listHazards, 'query'), ctrl.listHazards);

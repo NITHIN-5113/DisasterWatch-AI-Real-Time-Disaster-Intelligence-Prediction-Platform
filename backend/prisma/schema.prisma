@@ -55,15 +55,20 @@ model RefreshToken {
 
 model HazardEvent {
   id          String      @id @default(cuid())
-  externalId  String      @unique   // e.g. USGS event ID
-  type        String
-  magnitude   Float?
-  depth       Float?
+  externalId  String      @unique   // e.g. USGS event ID, GDACS ID, NASA ID
+  type        String                // earthquake, flood, storm, fire, volcano, other
+  title       String?
   latitude    Float
   longitude   Float
+  magnitude   Float?
+  severity    String?               // low, medium, high, critical
+  unit        String?               // e.g. Richter, knots, km/h, mm, °C
+  depth       Float?                // depth in km
   place       String?
-  title       String?
   url         String?
+  source      String      @default("USGS")
+  sourceUrl   String?
+  status      String?     @default("Active")
   riskScore   Float?
   riskLevel   String?
   rawData     String                // Full API response stored as JSON string
@@ -77,6 +82,7 @@ model HazardEvent {
   @@index([type])
   @@index([occurredAt])
   @@index([magnitude])
+  @@index([severity])
   @@map("hazard_events")
 }
 

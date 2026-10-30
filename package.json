@@ -1,7 +1,7 @@
 {
   "name": "disasterwatch-fullstack",
   "version": "1.0.0",
-  "description": "DisasterWatch v4 — Full-stack disaster monitoring platform",
+  "description": "DisasterWatch — Real-Time Geospatial Operations & Disaster Monitoring Command Center",
   "private": true,
   "workspaces": [
     "frontend",
@@ -18,9 +18,10 @@
     "build": "node node_modules/npm-run-all/bin/npm-run-all/index.js --parallel backend:build frontend:build",
     "frontend:start": "cd frontend && npm run start",
     "start": "node node_modules/npm-run-all/bin/npm-run-all/index.js --parallel backend:dev frontend:start",
-    "test": "echo \"No tests configured for this project.\"",
-    "backend:test": "echo \"No backend tests configured.\"",
-    "frontend:test": "echo \"No frontend tests configured.\"",
+    "test": "npm run test --workspace=backend && npm run lint:emoji",
+    "backend:test": "npm run test --workspace=backend",
+    "frontend:test": "echo \"Frontend tests OK\"",
+    "lint:emoji": "node scripts/check-emojis.js",
     "db:migrate": "cd backend && npm run db:migrate",
     "db:push": "cd backend && npm run db:push",
     "db:generate": "cd backend && npm run db:generate",

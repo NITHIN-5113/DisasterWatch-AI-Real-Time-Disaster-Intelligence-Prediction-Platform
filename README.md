@@ -1,8 +1,8 @@
-﻿# DisasterWatch-AI-Real-Time-Disaster-Intelligence-Prediction-Platform
+# DisasterWatch - Operations Command Center
 
-A comprehensive disaster monitoring and response platform with real-time data visualization, ML-powered risk prediction, and community reporting features.
+A real-time geospatial operations and disaster intelligence platform providing live satellite imagery, precipitation radar playback, multi-hazard alerts (earthquakes, cyclones, wildfires, floods, volcanoes), and atmospheric forecast maps.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+
@@ -14,10 +14,10 @@ A comprehensive disaster monitoring and response platform with real-time data vi
 git clone <repository-url>
 cd disasterwatch-fullstack
 
-# Install all dependencies
+# Install dependencies
 npm install
 
-# Set up the database
+# Initialize the database schema and seed demo users
 npm run db:push
 npm run db:seed
 
@@ -25,78 +25,78 @@ npm run db:seed
 npm run dev
 ```
 
-This will start both frontend (http://localhost:3000) and backend (http://localhost:4000) servers.
+This starts both the frontend command center (http://localhost:8000) and the backend API service (http://localhost:4000).
 
-### Alternative: Start individually
+### Start Individually
 ```bash
-# Backend only
+# Backend API only
 npm run backend:dev
 
-# Frontend only
+# Frontend UI only
 npm run frontend:dev
 ```
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 disasterwatch-fullstack/
-├── frontend/          # Vanilla JS SPA
-├── backend/           # Node.js/Express API
-├── package.json       # Root workspace config
-├── .env.example       # Environment variables template
-└── README.md          # This file
+├── frontend/          # Operations Command Center (Vanilla JS & Leaflet)
+├── backend/           # Node.js/Express REST API with Prisma ORM
+├── scripts/           # CI and validation scripts (e.g. check-emojis.js)
+├── package.json       # Monorepo workspace configuration
+├── .env.example       # Root environment variable template
+└── README.md          # Project documentation
 ```
 
-## 🛠 Tech Stack
+## Tech Stack
 
 ### Frontend
-- **Framework**: Vanilla JavaScript (ES6+)
-- **Styling**: CSS3 with custom properties
-- **Server**: Express.js static file server
+- Framework: Modern Vanilla JavaScript (ES6+ modular architecture)
+- Geospatial: Leaflet with high-resolution tile layers (Esri, NASA GIBS, OpenStreetMap)
+- Radar: RainViewer past observed radar time-series frames with playback animation
+- Weather: Open-Meteo current and hourly atmospheric models
+- Styling: Industrial dark operations command center theme with CSS custom properties
 
 ### Backend
-- **Runtime**: Node.js
-- **Framework**: Express.js
-- **Database**: SQLite (development) / PostgreSQL (production)
-- **ORM**: Prisma
-- **Auth**: JWT with bcrypt
-- **Validation**: Joi
-- **Logging**: Winston
+- Runtime: Node.js (v18+)
+- Framework: Express.js with Helmet and CORS
+- Database: SQLite (local development) / PostgreSQL (production)
+- ORM: Prisma Client
+- Security: JWT (Access & Refresh tokens) with bcrypt password hashing
+- Validation: Joi schemas
+- Ingestion: Parallel multi-source ingestion from USGS, GDACS, NASA EONET, RainViewer, Open-Meteo
 
-### Features
-- Real-time disaster monitoring
-- Interactive map visualization
-- ML-powered risk prediction
-- Community reporting system
-- User authentication & authorization
-- RESTful API with pagination
-- CORS enabled for cross-origin requests
+## Development & Database Management
 
-## 🔧 Development
-
-### Database Management
 ```bash
-# Push schema changes
+# Push schema updates
 npm run db:push
 
 # Generate Prisma client
 npm run db:generate
 
-# Seed with demo data
+# Seed database
 npm run db:seed
 
-# Open Prisma Studio
-npm run db:studio
+# Run backend unit tests and emoji linting
+npm test
+
+# Verify zero emojis across the codebase
+npm run lint:emoji
 ```
 
-### API Endpoints
-- `GET /api/v1/hazards` - List disaster events
-- `POST /api/v1/auth/login` - User authentication
-- `POST /api/v1/hazards/sync` - Sync external data feeds
-- See backend routes for complete API documentation
+## API Endpoints
 
-### Environment Variables
-Copy `.env.example` to `.env` and configure:
+- `GET /api/v1/hazards/live` - Normalized multi-hazard events (USGS, GDACS, NASA EONET)
+- `GET /api/v1/hazards/radar-frames` - 13 past + nowcast radar frames for timeline animation
+- `GET /api/v1/hazards/weather-point` - Live atmospheric telemetry (temp, wind, pressure, rain, humidity)
+- `GET /api/v1/hazards` - Filterable database list of disaster events
+- `POST /api/v1/auth/login` - User authentication and token issuance
+- `POST /api/v1/hazards/sync` - On-demand synchronization of authoritative USGS feeds
+
+## Environment Variables
+
+Copy `.env.example` to `.env`:
 
 ```env
 # Frontend
@@ -106,22 +106,9 @@ API_BASE_URL=http://localhost:4000/api/v1
 NODE_ENV=development
 PORT=4000
 DATABASE_URL="file:./dev.db"
-JWT_ACCESS_SECRET=your_secret_here
-JWT_REFRESH_SECRET=your_secret_here
+JWT_ACCESS_SECRET=your_access_secret_minimum_32_chars_change_this
+JWT_REFRESH_SECRET=your_refresh_secret_minimum_32_chars_change_this
+JWT_ACCESS_TTL=15m
+JWT_REFRESH_TTL=7d
+ALLOWED_ORIGINS=http://localhost:8000,http://localhost:3000,http://127.0.0.1:8000,http://127.0.0.1:3000
 ```
-
-## 🚀 Deployment
-
-### Production Build
-```bash
-# Build backend
-npm run backend:build
-
-# Frontend (no build step for vanilla JS)
-```
-
-### Environment Setup
-- Set `NODE_ENV=production`
-- Use PostgreSQL database
-- Configure proper JWT secrets
-- Set up reverse proxy (nginx/Caddy)

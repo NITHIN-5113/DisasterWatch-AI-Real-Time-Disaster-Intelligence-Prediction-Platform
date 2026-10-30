@@ -35,7 +35,7 @@ async function exportHazards(req, res, next) {
     }
 
     const where = {};
-    if (type)   where.type      = type.toUpperCase();
+    if (type)   where.type = type.toLowerCase();
     if (minMag !== undefined) where.magnitude = { gte: minMag };
     if (from || to) {
       where.occurredAt = {};
@@ -56,7 +56,7 @@ async function exportHazards(req, res, next) {
         userId:   req.user.id,
         filename: `hazards_export.${format}`,
         rowCount: events.length,
-        filters:  { type, minMag, from, to, limit },
+        filters:  JSON.stringify({ type, minMag, from, to, limit }),
       },
     });
 
@@ -122,7 +122,7 @@ async function exportMLScores(req, res, next) {
         userId:   req.user.id,
         filename: `ml_scores.${format}`,
         rowCount: scores.length,
-        filters:  { onlyAnomalies, limit },
+        filters:  JSON.stringify({ onlyAnomalies, limit }),
       },
     });
 

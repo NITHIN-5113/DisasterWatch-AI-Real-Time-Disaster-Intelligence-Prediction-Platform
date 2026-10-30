@@ -1,13 +1,15 @@
 // src/controllers/hazardController.js
-// DisasterWatch — Hazard events controller
-// Fetches from USGS (and simulated endpoints for other hazard types),
-// caches results in Postgres, and exposes a query API.
+// DisasterWatch — Authoritative Hazard events controller
+// Connects to USGS, NASA EONET, GDACS, RainViewer, and Open-Meteo
 
 'use strict';
 
-const prisma             = require('../config/prisma');
+const prisma = require('../config/prisma');
 const { success, created, paginated, ApiError } = require('../utils/response');
-const logger             = require('../utils/logger');
+const logger = require('../utils/logger');
+const liveDisasterService = require('../services/liveDisasterService');
+const radarService = require('../services/radarService');
+const weatherService = require('../services/weatherService');
 
 // ── USGS feed URLs ────────────────────────────
 const USGS_FEEDS = {
@@ -30,7 +32,7 @@ async function listHazards(req, res, next) {
     const skip  = (page - 1) * perPage;
     const where = {};
 
-    if (type)   where.type      = type;
+    if (type)   where.type = type.toLowerCase();
     if (minMag !== undefined || maxMag !== undefined) {
       where.magnitude = {};
       if (minMag !== undefined) where.magnitude.gte = minMag;
@@ -105,36 +107,56 @@ async function syncEarthquakes(req, res, next) {
     const features  = geojson.features || [];
     let upserted    = 0;
 
-    // Upsert in batches of 50 to avoid overwhelming the DB
     const BATCH = 50;
     for (let i = 0; i < features.length; i += BATCH) {
       const batch = features.slice(i, i + BATCH);
 
       await Promise.all(batch.map(async (f) => {
         const [lng, lat, depth] = f.geometry.coordinates;
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const mag = f.properties.mag !== null && f.properties.mag !== undefined
+          ? parseFloat(f.properties.mag.toFixed(1))
+          : null;
+
+        let severity = 'low';
+        if (mag >= 6.5) severity = 'critical';
+        else if (mag >= 5.0) severity = 'high';
+        else if (mag >= 4.0) severity = 'medium';
+
         try {
           await prisma.hazardEvent.upsert({
             where: { externalId: f.id },
             update: {
-              magnitude:  f.properties.mag,
-              depth,
+              magnitude:  mag,
+              depth:      depth !== undefined ? parseFloat(depth.toFixed(1)) : null,
+              severity,
+              unit:       'Richter',
               place:      f.properties.place,
               title:      f.properties.title,
               url:        f.properties.url,
-              rawData:    f,
+              source:     'USGS Earthquake Hazards Program',
+              sourceUrl:  f.properties.url,
+              status:     f.properties.status || 'Confirmed',
+              rawData:    JSON.stringify(f),
               updatedAt:  new Date(),
             },
             create: {
               externalId: f.id,
-              type:       'EARTHQUAKE',
-              magnitude:  f.properties.mag,
-              depth,
+              type:       'earthquake',
+              magnitude:  mag,
+              depth:      depth !== undefined ? parseFloat(depth.toFixed(1)) : null,
+              severity,
+              unit:       'Richter',
               latitude:   lat,
               longitude:  lng,
               place:      f.properties.place,
               title:      f.properties.title,
               url:        f.properties.url,
-              rawData:    f,
+              source:     'USGS Earthquake Hazards Program',
+              sourceUrl:  f.properties.url,
+              status:     f.properties.status || 'Confirmed',
+              rawData:    JSON.stringify(f),
               occurredAt: new Date(f.properties.time),
             },
           });
@@ -169,7 +191,7 @@ async function getStats(req, res, next) {
       }),
       prisma.hazardEvent.aggregate({
         _avg: { magnitude: true },
-        where: { type: 'EARTHQUAKE', magnitude: { not: null } },
+        where: { type: 'earthquake', magnitude: { not: null } },
       }),
     ]);
 
@@ -188,7 +210,6 @@ async function getStats(req, res, next) {
 }
 
 // ── Nearby events ─────────────────────────────
-// Uses a simple bounding-box approximation (Haversine via app layer)
 
 async function getNearby(req, res, next) {
   try {
@@ -200,7 +221,6 @@ async function getNearby(req, res, next) {
       return next(ApiError.badRequest('lat and lng query parameters are required'));
     }
 
-    // 1° lat ≈ 111 km
     const latDelta = radius / 111;
     const lngDelta = radius / (111 * Math.cos(lat * Math.PI / 180));
 
@@ -220,8 +240,7 @@ async function getNearby(req, res, next) {
   }
 }
 
-// ── Live Authoritative Events (USGS, NASA EONET) ───────────
-const liveDisasterService = require('../services/liveDisasterService');
+// ── Live Authoritative Events (USGS, NASA EONET, GDACS) ───
 
 async function getLiveEvents(req, res, next) {
   try {
@@ -234,24 +253,29 @@ async function getLiveEvents(req, res, next) {
   }
 }
 
-// ── Global Disaster Summary by Country & Continent ─────────
-async function getDisasterSummary(req, res, next) {
+// ── Full Radar Timeline Frames (RainViewer) ────────────────
+
+async function getRadarFrames(req, res, next) {
   try {
-    const timeframe = req.query.timeframe || '24h';
-    const result = await liveDisasterService.getGlobalDisasterSummary(timeframe);
+    const result = await radarService.getRadarFrames();
     return success(res, result);
   } catch (err) {
     next(err);
   }
 }
 
-// ── Observed Rainfall Radar Layer (RainViewer) ──────────────
-async function getRainfallRadar(req, res, next) {
+// ── Weather Telemetry at Coordinate (Open-Meteo) ───────────
+
+async function getWeatherPoint(req, res, next) {
   try {
-    const result = await liveDisasterService.fetchRainViewerRadar();
-    if (!result) {
-      return next(ApiError.internal('Unable to fetch live radar metadata'));
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return next(ApiError.badRequest('Numeric lat and lng query parameters are required'));
     }
+
+    const result = await weatherService.fetchPointWeather(lat, lng);
     return success(res, result);
   } catch (err) {
     next(err);
@@ -265,6 +289,6 @@ module.exports = {
   getStats,
   getNearby,
   getLiveEvents,
-  getDisasterSummary,
-  getRainfallRadar,
+  getRadarFrames,
+  getWeatherPoint,
 };
